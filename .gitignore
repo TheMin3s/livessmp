@@ -1,0 +1,32 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Loom / Fabric dev environment
+run/
+.fabric/
+
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.code-workspace
+.classpath
+.project
+.settings/
+bin/
+
+# macOS / OS metadata
+.DS_Store
+Thumbs.db
+
+# Claude Code session state
+.claude/
+
+# Compiled output / artifacts (keep released jars out of git history)
+*.class
+out/
+target/

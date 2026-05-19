@@ -1,0 +1,169 @@
+package com.schecks.lifesmp.commands;
+
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.schecks.lifesmp.LifeItems;
+import com.schecks.lifesmp.LifeLog;
+import com.schecks.lifesmp.LifeUtil;
+import com.schecks.lifesmp.LivesData;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.NameAndId;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+
+public final class LifeCommand {
+    private LifeCommand() {}
+
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("life")
+            .then(Commands.literal("crystal")
+                .then(Commands.argument("player", StringArgumentType.word())
+                    .executes(LifeCommand::useCrystal)))
+            .then(Commands.literal("withdraw")
+                .then(Commands.argument("quantity", IntegerArgumentType.integer(1, LivesData.MAX_LIVES - 1))
+                    .executes(LifeCommand::withdraw)))
+            .then(Commands.literal("deposit")
+                .executes(LifeCommand::deposit))
+        );
+    }
+
+    private static int useCrystal(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer self = ctx.getSource().getPlayerOrException();
+        MinecraftServer server = self.level().getServer();
+        if (server == null) return 0;
+
+        ItemStack held = self.getMainHandItem();
+        if (!LifeItems.isRevivalCrystal(held)) {
+            ctx.getSource().sendFailure(Component.literal("You must be holding a Revival Crystal in your main hand."));
+            return 0;
+        }
+
+        String name = StringArgumentType.getString(ctx, "player");
+        NameAndId target = LifeUtil.resolveNameAndId(server, name);
+        if (target == null) {
+            ctx.getSource().sendFailure(Component.literal("Unknown player: " + name));
+            return 0;
+        }
+        LivesData data = LivesData.get(server);
+        if (data.getLives(target.id()) > 0) {
+            ctx.getSource().sendFailure(Component.literal(target.name() + " is not out of lives."));
+            return 0;
+        }
+
+        LifeUtil.unban(server, target);
+        data.setLives(target.id(), 3);
+        held.shrink(1);
+        LifeLog.info("[lifesmp] {} revived {} via Revival Crystal (lives now 3)",
+            self.getGameProfile().name(), target.name());
+
+        ctx.getSource().sendSuccess(() ->
+            Component.literal("Revived ").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))
+                .append(Component.literal(target.name()).setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE)))
+                .append(Component.literal(" with 3 lives.").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))),
+            false
+        );
+        server.getPlayerList().broadcastSystemMessage(
+            Component.literal(target.name() + " has been revived by " + self.getGameProfile().name() + "!")
+                .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFFE17B))),
+            false
+        );
+        return 1;
+    }
+
+    private static int withdraw(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer self = ctx.getSource().getPlayerOrException();
+        MinecraftServer server = self.level().getServer();
+        if (server == null) return 0;
+
+        int quantity = IntegerArgumentType.getInteger(ctx, "quantity");
+        LivesData data = LivesData.get(server);
+        int current = data.getLives(self.getUUID());
+        if (current - quantity < 1) {
+            ctx.getSource().sendFailure(Component.literal(
+                "You must keep at least 1 life. You have " + current + "."
+            ));
+            return 0;
+        }
+
+        data.addLives(self.getUUID(), -quantity);
+        LifeLog.info("[lifesmp] {} withdrew {} life(s) (now {})",
+            self.getGameProfile().name(), quantity, current - quantity);
+        ItemStack shards = LifeItems.createLifeShard(quantity);
+        if (!self.getInventory().add(shards)) {
+            ServerLevel sl = self.level();
+            ItemEntity drop = new ItemEntity(sl, self.getX(), self.getY(), self.getZ(), shards);
+            drop.setDefaultPickUpDelay();
+            sl.addFreshEntity(drop);
+        }
+        LifeUtil.refreshTabName(server, self);
+
+        final int finalQuantity = quantity;
+        final int finalRemaining = current - quantity;
+        ctx.getSource().sendSuccess(() ->
+            Component.literal("Withdrew ").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))
+                .append(Component.literal(finalQuantity + " life" + (finalQuantity == 1 ? "" : "s"))
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW)))
+                .append(Component.literal(". You have " + finalRemaining + " left.")
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))),
+            false
+        );
+        return 1;
+    }
+
+    private static int deposit(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer self = ctx.getSource().getPlayerOrException();
+        MinecraftServer server = self.level().getServer();
+        if (server == null) return 0;
+
+        LivesData data = LivesData.get(server);
+        int current = data.getLives(self.getUUID());
+        int capacity = LivesData.MAX_LIVES - current;
+        if (capacity <= 0) {
+            ctx.getSource().sendFailure(Component.literal("You are already at max lives (" + LivesData.MAX_LIVES + ")."));
+            return 0;
+        }
+
+        Inventory inv = self.getInventory();
+        int deposited = 0;
+        for (int i = 0; i < inv.getContainerSize() && deposited < capacity; i++) {
+            ItemStack s = inv.getItem(i);
+            if (!LifeItems.isLifeShard(s)) continue;
+            int take = Math.min(s.getCount(), capacity - deposited);
+            s.shrink(take);
+            deposited += take;
+        }
+
+        if (deposited <= 0) {
+            ctx.getSource().sendFailure(Component.literal("You have no Life Shards to deposit."));
+            return 0;
+        }
+        data.addLives(self.getUUID(), deposited);
+        LifeUtil.refreshTabName(server, self);
+        LifeLog.info("[lifesmp] {} deposited {} life(s) (now {})",
+            self.getGameProfile().name(), deposited, data.getLives(self.getUUID()));
+
+        int totalNow = data.getLives(self.getUUID());
+        final int dep = deposited;
+        ctx.getSource().sendSuccess(() ->
+            Component.literal("Deposited ").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))
+                .append(Component.literal(dep + " life" + (dep == 1 ? "" : "s"))
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW)))
+                .append(Component.literal(". You now have " + totalNow + ".")
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))),
+            false
+        );
+        return 1;
+    }
+}

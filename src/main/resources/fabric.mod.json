@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "lifesmp",
+  "version": "${version}",
+  "name": "Life SMP",
+  "description": "Lives, deaths, revival crystals and life shards.",
+  "authors": ["schecks"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.schecks.lifesmp.LifeSMP"]
+  },
+  "mixins": [
+    "lifesmp.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "~26.1",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
