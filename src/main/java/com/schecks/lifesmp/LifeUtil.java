@@ -45,19 +45,20 @@ public final class LifeUtil {
     public static void banForOutOfLives(MinecraftServer server, NameAndId nameAndId) {
         PlayerList pl = server.getPlayerList();
         UserBanList bans = pl.getBans();
+        String reason = LifeConfig.get().banMessage;
         if (!bans.isBanned(nameAndId)) {
             UserBanListEntry entry = new UserBanListEntry(
                 nameAndId,
                 null,
                 "lifesmp",
                 null,
-                "You ran out of lives."
+                reason
             );
             bans.add(entry);
         }
         ServerPlayer online = pl.getPlayer(nameAndId.id());
         if (online != null) {
-            online.connection.disconnect(Component.literal("You ran out of lives."));
+            online.connection.disconnect(Component.literal(reason));
         }
     }
 

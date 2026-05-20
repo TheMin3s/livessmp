@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.schecks.lifesmp.LifeConfig;
 import com.schecks.lifesmp.LifeItems;
 import com.schecks.lifesmp.LifeLog;
 import com.schecks.lifesmp.LifeUtil;
@@ -31,8 +32,10 @@ public final class LifeCommand {
             .then(Commands.literal("crystal")
                 .then(Commands.argument("player", StringArgumentType.word())
                     .executes(LifeCommand::useCrystal)))
+            // Upper bound is a generous static literal — the real limit is
+            // validated against the live config in the withdraw handler.
             .then(Commands.literal("withdraw")
-                .then(Commands.argument("quantity", IntegerArgumentType.integer(1, LivesData.MAX_LIVES - 1))
+                .then(Commands.argument("quantity", IntegerArgumentType.integer(1, 1000))
                     .executes(LifeCommand::withdraw)))
             .then(Commands.literal("deposit")
                 .executes(LifeCommand::deposit))
@@ -62,16 +65,18 @@ public final class LifeCommand {
             return 0;
         }
 
+        int reviveLives = LifeConfig.get().revivalCrystalLives;
         LifeUtil.unban(server, target);
-        data.setLives(target.id(), 3);
+        data.setLives(target.id(), reviveLives);
         held.shrink(1);
-        LifeLog.info("[lifesmp] {} revived {} via Revival Crystal (lives now 3)",
-            self.getGameProfile().name(), target.name());
+        int grantedLives = data.getLives(target.id());   // post-clamp actual
+        LifeLog.info("[lifesmp] {} revived {} via Revival Crystal (lives now {})",
+            self.getGameProfile().name(), target.name(), grantedLives);
 
         ctx.getSource().sendSuccess(() ->
             Component.literal("Revived ").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))
                 .append(Component.literal(target.name()).setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE)))
-                .append(Component.literal(" with 3 lives.").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))),
+                .append(Component.literal(" with " + grantedLives + " lives.").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))),
             false
         );
         server.getPlayerList().broadcastSystemMessage(
@@ -90,9 +95,11 @@ public final class LifeCommand {
         int quantity = IntegerArgumentType.getInteger(ctx, "quantity");
         LivesData data = LivesData.get(server);
         int current = data.getLives(self.getUUID());
-        if (current - quantity < 1) {
+        int floor = LifeConfig.get().minLivesAfterWithdraw;
+        if (current - quantity < floor) {
             ctx.getSource().sendFailure(Component.literal(
-                "You must keep at least 1 life. You have " + current + "."
+                "You must keep at least " + floor + " life" + (floor == 1 ? "" : "s")
+                    + ". You have " + current + "."
             ));
             return 0;
         }
@@ -129,9 +136,10 @@ public final class LifeCommand {
 
         LivesData data = LivesData.get(server);
         int current = data.getLives(self.getUUID());
-        int capacity = LivesData.MAX_LIVES - current;
+        int maxLives = LifeConfig.get().maxLives;
+        int capacity = maxLives - current;
         if (capacity <= 0) {
-            ctx.getSource().sendFailure(Component.literal("You are already at max lives (" + LivesData.MAX_LIVES + ")."));
+            ctx.getSource().sendFailure(Component.literal("You are already at max lives (" + maxLives + ")."));
             return 0;
         }
 

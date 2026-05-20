@@ -13,9 +13,9 @@ import java.util.Map;
 import java.util.UUID;
 
 public class LivesData extends SavedData {
-    public static final int DEFAULT_LIVES = 10;
-    public static final int MAX_LIVES = 15;
-    public static final int CRAFT_LIMIT = 10;
+    /** Fallback used only by the codec when an NBT record is missing the
+     *  "lives" field — real gameplay defaults come from LifeConfig. */
+    private static final int CODEC_FALLBACK_LIVES = 10;
 
     private final Map<UUID, PlayerLifeData> data;
 
@@ -34,7 +34,7 @@ public class LivesData extends SavedData {
         public boolean initialised;
 
         public PlayerLifeData() {
-            this(DEFAULT_LIVES, 0, "", false);
+            this(LifeConfig.get().defaultLives, 0, "", false);
         }
 
         public PlayerLifeData(int lives, int crafted, String lastKnownName, boolean initialised) {
@@ -45,7 +45,7 @@ public class LivesData extends SavedData {
         }
 
         public static final Codec<PlayerLifeData> CODEC = RecordCodecBuilder.create(i -> i.group(
-            Codec.INT.fieldOf("lives").orElse(DEFAULT_LIVES).forGetter(d -> d.lives),
+            Codec.INT.fieldOf("lives").orElse(CODEC_FALLBACK_LIVES).forGetter(d -> d.lives),
             Codec.INT.fieldOf("crafted").orElse(0).forGetter(d -> d.crafted),
             Codec.STRING.fieldOf("name").orElse("").forGetter(d -> d.lastKnownName),
             Codec.BOOL.fieldOf("initialised").orElse(false).forGetter(d -> d.initialised)
@@ -81,13 +81,13 @@ public class LivesData extends SavedData {
 
     public void setLives(UUID id, int value) {
         PlayerLifeData d = getOrCreate(id);
-        d.lives = Math.max(0, Math.min(MAX_LIVES, value));
+        d.lives = Math.max(0, Math.min(LifeConfig.get().maxLives, value));
         setDirty();
     }
 
     public int addLives(UUID id, int delta) {
         PlayerLifeData d = getOrCreate(id);
-        d.lives = Math.max(0, Math.min(MAX_LIVES, d.lives + delta));
+        d.lives = Math.max(0, Math.min(LifeConfig.get().maxLives, d.lives + delta));
         setDirty();
         return d.lives;
     }
@@ -97,12 +97,12 @@ public class LivesData extends SavedData {
     }
 
     public int remainingCrafts(UUID id) {
-        return Math.max(0, CRAFT_LIMIT - getOrCreate(id).crafted);
+        return Math.max(0, LifeConfig.get().craftLimit - getOrCreate(id).crafted);
     }
 
     public void addCrafted(UUID id, int delta) {
         PlayerLifeData d = getOrCreate(id);
-        d.crafted = Math.min(CRAFT_LIMIT, d.crafted + delta);
+        d.crafted = Math.min(LifeConfig.get().craftLimit, d.crafted + delta);
         setDirty();
     }
 

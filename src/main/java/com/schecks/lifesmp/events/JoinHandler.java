@@ -1,5 +1,6 @@
 package com.schecks.lifesmp.events;
 
+import com.schecks.lifesmp.LifeConfig;
 import com.schecks.lifesmp.LifeLog;
 import com.schecks.lifesmp.LifeUtil;
 import com.schecks.lifesmp.LivesData;
@@ -26,10 +27,11 @@ public final class JoinHandler {
         data.updateName(player.getUUID(), player.getGameProfile().name());
         boolean first = !data.getOrCreate(player.getUUID()).initialised;
         if (first) {
-            data.setLives(player.getUUID(), LivesData.DEFAULT_LIVES);
+            int startLives = LifeConfig.get().defaultLives;
+            data.setLives(player.getUUID(), startLives);
             data.markInitialised(player.getUUID());
             LifeLog.info("[lifesmp] {} joined for the first time — initialised at {} lives",
-                player.getGameProfile().name(), LivesData.DEFAULT_LIVES);
+                player.getGameProfile().name(), startLives);
         } else {
             LifeLog.info("[lifesmp] {} rejoined ({} lives)",
                 player.getGameProfile().name(), data.getLives(player.getUUID()));

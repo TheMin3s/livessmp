@@ -21,9 +21,16 @@ public class LifeSMP implements ModInitializer {
         });
         // Dedicated event log goes to config/lifesmp/lifesmp.log; opens at server
         // start, closes at server stop. Auto-rotates every 6h. Never writes
-        // to the main server console — no boot message either.
-        ServerLifecycleEvents.SERVER_STARTING.register(server ->
-            LifeLog.init(server.getServerDirectory()));
+        // to the main server console — no boot message either. The tunable
+        // config.json is loaded alongside it.
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            LifeLog.init(server.getServerDirectory());
+            LifeConfig.init(server.getServerDirectory());
+        });
+        // Boot-time update check — runs after config is loaded. The only line
+        // this can put on the main console is a single "update available" warning.
+        ServerLifecycleEvents.SERVER_STARTED.register(server ->
+            UpdateChecker.checkOnBoot());
         ServerLifecycleEvents.SERVER_STOPPED.register(server ->
             LifeLog.close());
     }

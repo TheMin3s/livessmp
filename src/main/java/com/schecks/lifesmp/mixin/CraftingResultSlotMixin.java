@@ -1,5 +1,6 @@
 package com.schecks.lifesmp.mixin;
 
+import com.schecks.lifesmp.LifeConfig;
 import com.schecks.lifesmp.LifeItems;
 import com.schecks.lifesmp.LivesData;
 import net.minecraft.network.chat.Component;
@@ -29,9 +30,10 @@ public abstract class CraftingResultSlotMixin {
         ItemStack stack = ((Slot)(Object)this).getItem();
         if (!LifeItems.isLifeShard(stack)) return;
         LivesData data = LivesData.get(sp.level().getServer());
-        if (data.getCrafted(sp.getUUID()) >= LivesData.CRAFT_LIMIT) {
+        int craftLimit = LifeConfig.get().craftLimit;
+        if (data.getCrafted(sp.getUUID()) >= craftLimit) {
             sp.sendSystemMessage(
-                Component.literal("You have reached the lifetime crafting limit (" + LivesData.CRAFT_LIMIT + ") for Life Shards.")
+                Component.literal("You have reached the lifetime crafting limit (" + craftLimit + ") for Life Shards.")
                     .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFF4C4C))),
                 true
             );

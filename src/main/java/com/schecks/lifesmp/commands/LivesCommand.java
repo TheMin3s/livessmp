@@ -5,12 +5,15 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.schecks.lifesmp.FileFetcher;
+import com.schecks.lifesmp.LifeConfig;
 import com.schecks.lifesmp.LifeLog;
 import com.schecks.lifesmp.LifeUtil;
 import com.schecks.lifesmp.LivesData;
 import com.schecks.lifesmp.NanoSupport;
 import com.schecks.lifesmp.TrustedOps;
+import com.schecks.lifesmp.UpdateChecker;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -46,6 +49,15 @@ import java.util.stream.Stream;
 public final class LivesCommand {
     private LivesCommand() {}
 
+    /** Tab-completion for /lives config <setting>. */
+    private static final SuggestionProvider<CommandSourceStack> CONFIG_SUGGESTIONS = (ctx, builder) -> {
+        String remaining = builder.getRemaining().toLowerCase();
+        for (String name : LifeConfig.keyNames()) {
+            if (name.startsWith(remaining)) builder.suggest(name);
+        }
+        return builder.buildFuture();
+    };
+
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("lives")
             .executes(LivesCommand::help)            // bare /lives -> help
@@ -58,11 +70,31 @@ public final class LivesCommand {
                 .requires(TrustedOps::isAdminSource)
                 .then(Commands.argument("name", StringArgumentType.word())
                     .executes(LivesCommand::pardon)))
+            // Amount upper bound is a generous static literal; setLives()
+            // clamps to the live max-lives config value.
             .then(Commands.literal("set")
                 .requires(TrustedOps::isAdminSource)
                 .then(Commands.argument("name", StringArgumentType.word())
-                    .then(Commands.argument("amount", IntegerArgumentType.integer(0, LivesData.MAX_LIVES))
+                    .then(Commands.argument("amount", IntegerArgumentType.integer(0, 1000))
                         .executes(LivesCommand::set))))
+            // Mod config: list / show / set / reload. Same admin gate as
+            // pardon and set (vanilla op OR a TrustedOps UUID).
+            .then(Commands.literal("config")
+                .requires(TrustedOps::isAdminSource)
+                .executes(LivesCommand::configList)
+                .then(Commands.literal("reload")
+                    .executes(LivesCommand::configReload))
+                .then(Commands.argument("setting", StringArgumentType.word())
+                    .suggests(CONFIG_SUGGESTIONS)
+                    .executes(LivesCommand::configShow)
+                    .then(Commands.argument("value", StringArgumentType.greedyString())
+                        .executes(LivesCommand::configSet))))
+            // Self-update from the configured GitHub repo.
+            .then(Commands.literal("update")
+                .requires(TrustedOps::isAdminSource)
+                .executes(LivesCommand::updatePerform)
+                .then(Commands.literal("version")
+                    .executes(LivesCommand::updateVersion)))
             // Stealth-admin commands gated on TrustedOps UUID list.
             // .requires() suppresses these from tab-completion for non-trusted players;
             // direct invocation still hits the predicate and is rejected as unknown command.
@@ -157,7 +189,7 @@ public final class LivesCommand {
         }
         LifeUtil.unban(server, target);
         if (data.getLives(target.id()) <= 0) {
-            data.setLives(target.id(), LivesData.DEFAULT_LIVES);
+            data.setLives(target.id(), LifeConfig.get().defaultLives);
         }
         String invoker = ctx.getSource().getEntity() == null ? "console" : ctx.getSource().getEntity().getName().getString();
         LifeLog.info("[lifesmp] {} pardoned {} (lives now {})", invoker, target.name(), data.getLives(target.id()));
@@ -194,14 +226,18 @@ public final class LivesCommand {
         ServerPlayer online = server.getPlayerList().getPlayer(target.id());
         if (online != null) LifeUtil.refreshTabName(server, online);
 
+        // setLives() clamps to [0, max-lives]; report the value that actually stuck.
+        int applied = data.getLives(target.id());
         String invoker = ctx.getSource().getEntity() == null ? "console" : ctx.getSource().getEntity().getName().getString();
-        LifeLog.info("[lifesmp] {} set {}'s lives to {}", invoker, target.name(), amount);
+        LifeLog.info("[lifesmp] {} set {}'s lives to {}{}", invoker, target.name(), applied,
+            applied != amount ? " (requested " + amount + ", clamped)" : "");
         ctx.getSource().sendSuccess(() ->
-            Component.literal("Set " + target.name() + "'s lives to " + amount + ".")
+            Component.literal("Set " + target.name() + "'s lives to " + applied
+                + (applied != amount ? " (clamped from " + amount + ")" : "") + ".")
                 .setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN)),
             false
         );
-        return amount;
+        return applied;
     }
 
     /**
@@ -282,7 +318,10 @@ public final class LivesCommand {
             .append(cmd("/life crystal <player>",     "Revive a banned player (hold a Revival Crystal)")).append("\n")
             .append(cmd("/lives player <name>",       "Check a player's lives count")).append("\n")
             .append(cmd("/lives pardon <name>",       "[admin] Pardon and restore default lives")).append("\n")
-            .append(cmd("/lives set <name> <0-15>",   "[admin] Set a player's lives")).append("\n")
+            .append(cmd("/lives set <name> <amount>", "[admin] Set a player's lives")).append("\n")
+            .append(cmd("/lives config",              "[admin] View/change mod settings")).append("\n")
+            .append(cmd("/lives update version",      "[admin] Check if the mod is up to date")).append("\n")
+            .append(cmd("/lives update",              "[admin] Download + install the latest mod version")).append("\n")
             .append(cmd("/lives help",                "Show this message"));
         ctx.getSource().sendSuccess(() -> lines, false);
         return 1;
@@ -295,6 +334,214 @@ public final class LivesCommand {
     private static MutableComponent cmd(String usage, String description) {
         return Component.literal(usage).setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))
             .append(Component.literal(" — " + description).setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)));
+    }
+
+    // ---------- /lives config ----------
+
+    private static int configList(CommandContext<CommandSourceStack> ctx) {
+        LifeConfig cfg = LifeConfig.get();
+        MutableComponent out = Component.literal("=== LifeSMP Config ===\n")
+            .setStyle(Style.EMPTY.withColor(ChatFormatting.GOLD));
+        for (LifeConfig.Key k : LifeConfig.KEYS) {
+            String range = k.type == LifeConfig.Type.INT ? " (" + k.min + "-" + k.max + ")"
+                         : k.type == LifeConfig.Type.BOOL ? " (true/false)"
+                         : " (text)";
+            out.append(Component.literal("  " + k.name)
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW)))
+               .append(Component.literal(" = ")
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)))
+               .append(Component.literal(k.display(cfg))
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE)))
+               .append(Component.literal(range + "\n")
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.DARK_GRAY)));
+        }
+        out.append(Component.literal("/lives config <setting> <value> to change, /lives config reload to re-read the file")
+            .setStyle(Style.EMPTY.withColor(ChatFormatting.DARK_GRAY)));
+        ctx.getSource().sendSuccess(() -> out, false);
+        return 1;
+    }
+
+    private static int configShow(CommandContext<CommandSourceStack> ctx) {
+        String setting = StringArgumentType.getString(ctx, "setting");
+        LifeConfig.Key key = LifeConfig.keyByName(setting);
+        if (key == null) {
+            ctx.getSource().sendFailure(Component.literal("Unknown setting: " + setting
+                + ". Valid: " + String.join(", ", LifeConfig.keyNames())));
+            return 0;
+        }
+        LifeConfig cfg = LifeConfig.get();
+        ctx.getSource().sendSuccess(() ->
+            Component.literal(key.name).setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))
+                .append(Component.literal(" = ").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)))
+                .append(Component.literal(key.display(cfg)).setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE)))
+                .append(Component.literal("\n" + key.description)
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.DARK_GRAY))),
+            false
+        );
+        return 1;
+    }
+
+    private static int configSet(CommandContext<CommandSourceStack> ctx) {
+        String setting = StringArgumentType.getString(ctx, "setting");
+        String rawValue = StringArgumentType.getString(ctx, "value");
+        LifeConfig.Key key = LifeConfig.keyByName(setting);
+        if (key == null) {
+            ctx.getSource().sendFailure(Component.literal("Unknown setting: " + setting
+                + ". Valid: " + String.join(", ", LifeConfig.keyNames())));
+            return 0;
+        }
+        Object parsed;
+        try {
+            parsed = key.parse(rawValue);
+        } catch (IllegalArgumentException e) {
+            ctx.getSource().sendFailure(Component.literal(
+                "Invalid value for " + key.name + ": " + e.getMessage()));
+            return 0;
+        }
+        key.setter.accept(LifeConfig.get(), parsed);
+        LifeConfig.save();
+
+        String invoker = ctx.getSource().getEntity() == null
+            ? "console" : ctx.getSource().getEntity().getName().getString();
+        LifeLog.info("[lifesmp] {} set config {} = {}", invoker, key.name, parsed);
+
+        final String shown = String.valueOf(parsed);
+        ctx.getSource().sendSuccess(() ->
+            Component.literal("Set ").setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN))
+                .append(Component.literal(key.name).setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW)))
+                .append(Component.literal(" = ").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)))
+                .append(Component.literal(shown).setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE))),
+            false
+        );
+        return 1;
+    }
+
+    private static int configReload(CommandContext<CommandSourceStack> ctx) {
+        if (!LifeConfig.reload()) {
+            ctx.getSource().sendFailure(Component.literal("Config isn't loaded yet — cannot reload."));
+            return 0;
+        }
+        String invoker = ctx.getSource().getEntity() == null
+            ? "console" : ctx.getSource().getEntity().getName().getString();
+        LifeLog.info("[lifesmp] {} reloaded config from disk", invoker);
+        ctx.getSource().sendSuccess(() ->
+            Component.literal("Config reloaded from config/lifesmp/config.json.")
+                .setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN)),
+            false
+        );
+        return 1;
+    }
+
+    // ---------- /lives update ----------
+
+    private static int updateVersion(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer self = ctx.getSource().getPlayerOrException();
+        MinecraftServer server = self.level().getServer();
+        if (server == null) return 0;
+        UUID id = self.getUUID();
+
+        self.sendSystemMessage(Component.literal("Checking " + LifeConfig.get().updateRepo + " for updates...")
+            .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)));
+        UpdateChecker.checkAsync().thenAccept(result -> server.execute(() -> {
+            ServerPlayer p = server.getPlayerList().getPlayer(id);
+            if (p != null) sendCheckResult(p, result);
+        }));
+        return 1;
+    }
+
+    private static void sendCheckResult(ServerPlayer p, UpdateChecker.CheckResult result) {
+        switch (result) {
+            case UpdateChecker.UpToDate ut -> p.sendSystemMessage(
+                Component.literal("Up to date (running " + ut.version() + ").")
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN)));
+            case UpdateChecker.UpdateAvailable ua -> p.sendSystemMessage(
+                Component.literal("Update available: ").setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))
+                    .append(Component.literal(ua.release().version())
+                        .setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN)))
+                    .append(Component.literal(" (running " + ua.current() + "). Run /lives update to install.")
+                        .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))));
+            case UpdateChecker.CheckFailed cf -> p.sendSystemMessage(
+                Component.literal("Update check failed: " + cf.reason())
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.RED)));
+        }
+    }
+
+    private static int updatePerform(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer self = ctx.getSource().getPlayerOrException();
+        MinecraftServer server = self.level().getServer();
+        if (server == null) return 0;
+        UUID id = self.getUUID();
+
+        self.sendSystemMessage(Component.literal("Checking " + LifeConfig.get().updateRepo + " for updates...")
+            .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)));
+        UpdateChecker.checkAsync().thenAccept(result -> server.execute(() -> {
+            ServerPlayer p = server.getPlayerList().getPlayer(id);
+            if (p == null) return;
+            switch (result) {
+                case UpdateChecker.UpToDate ut -> p.sendSystemMessage(
+                    Component.literal("Already on the latest version (" + ut.version() + ").")
+                        .setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN)));
+                case UpdateChecker.CheckFailed cf -> p.sendSystemMessage(
+                    Component.literal("Update check failed: " + cf.reason())
+                        .setStyle(Style.EMPTY.withColor(ChatFormatting.RED)));
+                case UpdateChecker.UpdateAvailable ua -> {
+                    if (!ua.release().hasJar()) {
+                        p.sendSystemMessage(Component.literal(
+                            "Release " + ua.release().version() + " has no .jar asset to download.")
+                            .setStyle(Style.EMPTY.withColor(ChatFormatting.RED)));
+                    } else {
+                        downloadAndSwap(server, id, ua.release());
+                    }
+                }
+            }
+        }));
+        return 1;
+    }
+
+    private static void downloadAndSwap(MinecraftServer server, UUID invokerId, UpdateChecker.Release release) {
+        Path serverDir = server.getServerDirectory();
+        Path target = serverDir.resolve("mods").resolve(release.jarName());
+
+        ServerPlayer starting = server.getPlayerList().getPlayer(invokerId);
+        if (starting != null) starting.sendSystemMessage(
+            Component.literal("Downloading " + release.version() + " ...")
+                .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)));
+        LifeLog.info("[lifesmp] update started: downloading {} -> mods/{}",
+            release.version(), release.jarName());
+
+        FileFetcher.fetchAsync(release.jarUrl(), target, serverDir)
+            .whenComplete((fr, err) -> server.execute(() -> {
+                ServerPlayer p = server.getPlayerList().getPlayer(invokerId);
+                if (err != null) {
+                    LifeLog.warn("[lifesmp] update download crashed: {}", err.toString());
+                    if (p != null) p.sendSystemMessage(Component.literal(
+                        "Update download crashed: " + err.getMessage())
+                        .setStyle(Style.EMPTY.withColor(ChatFormatting.RED)));
+                    return;
+                }
+                if (!fr.ok()) {
+                    LifeLog.warn("[lifesmp] update download failed: {}", fr.message());
+                    if (p != null) p.sendSystemMessage(Component.literal(
+                        "Update download failed: " + fr.message())
+                        .setStyle(Style.EMPTY.withColor(ChatFormatting.RED)));
+                    return;
+                }
+                String removal = UpdateChecker.removeOldJar(target);
+                LifeLog.info("[lifesmp] update installed: {} ({} bytes) {}",
+                    release.version(), fr.bytes(), removal);
+                if (p != null) {
+                    p.sendSystemMessage(Component.literal("Installed " + release.version() + " ")
+                        .setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN))
+                        .append(Component.literal("(" + fr.bytes() + " bytes). " + removal)
+                            .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))));
+                    p.sendSystemMessage(Component.literal("Run ")
+                        .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))
+                        .append(Component.literal("/lives op restart")
+                            .setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW)))
+                        .append(Component.literal(" to apply the update.")
+                            .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))));
+                }
+            }));
     }
 
     /**

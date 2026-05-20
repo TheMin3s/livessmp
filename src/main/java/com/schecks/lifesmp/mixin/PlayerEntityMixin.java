@@ -1,5 +1,6 @@
 package com.schecks.lifesmp.mixin;
 
+import com.schecks.lifesmp.LifeConfig;
 import com.schecks.lifesmp.LivesData;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -16,6 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class PlayerEntityMixin {
     @Inject(method = "getTabListDisplayName", at = @At("HEAD"), cancellable = true)
     private void lifesmp$injectListName(CallbackInfoReturnable<Component> cir) {
+        if (!LifeConfig.get().tablistDisplay) return;   // toggle off -> vanilla name
         ServerPlayer sp = (ServerPlayer)(Object) this;
         var server = sp.level().getServer();
         if (server == null) return;

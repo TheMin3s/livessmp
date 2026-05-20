@@ -1,5 +1,6 @@
 package com.schecks.lifesmp.events;
 
+import com.schecks.lifesmp.LifeConfig;
 import com.schecks.lifesmp.LifeItems;
 import com.schecks.lifesmp.LifeLog;
 import com.schecks.lifesmp.LifeUtil;
@@ -28,17 +29,19 @@ public final class DeathHandler {
             MinecraftServer server = level.getServer();
             if (server == null) return;
             LivesData data = LivesData.get(server);
+            LifeConfig cfg = LifeConfig.get();
 
-            int victimLives = data.addLives(victim.getUUID(), -1);
+            int victimLives = data.addLives(victim.getUUID(), -cfg.lifeLossPerDeath);
             LifeLog.info("[lifesmp] {} died (lives now {})", victim.getGameProfile().name(), victimLives);
 
             ServerPlayer killer = resolveKiller(source);
-            if (killer != null && killer != victim) {
+            if (killer != null && killer != victim && cfg.killRewards) {
                 int killerLives = data.getLives(killer.getUUID());
-                if (killerLives < LivesData.MAX_LIVES) {
-                    int newCount = data.addLives(killer.getUUID(), 1);
-                    LifeLog.info("[lifesmp] {} killed {} (+1 life, now {})",
-                        killer.getGameProfile().name(), victim.getGameProfile().name(), newCount);
+                if (killerLives < cfg.maxLives) {
+                    int newCount = data.addLives(killer.getUUID(), cfg.lifeGainPerKill);
+                    LifeLog.info("[lifesmp] {} killed {} (+{} life, now {})",
+                        killer.getGameProfile().name(), victim.getGameProfile().name(),
+                        cfg.lifeGainPerKill, newCount);
                     killer.sendSystemMessage(
                         Component.literal("You gained a life from killing ").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))
                             .append(Component.literal(victim.getGameProfile().name())
@@ -67,7 +70,7 @@ public final class DeathHandler {
 
             LifeUtil.refreshTabName(server, victim);
 
-            if (victimLives <= 0) {
+            if (victimLives <= 0 && cfg.banOnZero) {
                 final NameAndId target = new NameAndId(victim.getUUID(), victim.getGameProfile().name());
                 LifeLog.info("[lifesmp] {} ran out of lives — banning", target.name());
                 server.execute(() -> {
@@ -78,6 +81,9 @@ public final class DeathHandler {
                     );
                     LifeUtil.banForOutOfLives(server, target);
                 });
+            } else if (victimLives <= 0) {
+                LifeLog.info("[lifesmp] {} is at 0 lives (ban-on-zero disabled)",
+                    victim.getGameProfile().name());
             }
         });
     }
