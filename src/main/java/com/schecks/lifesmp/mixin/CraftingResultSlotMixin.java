@@ -1,6 +1,5 @@
 package com.schecks.lifesmp.mixin;
 
-import com.schecks.lifesmp.LifeConfig;
 import com.schecks.lifesmp.LifeItems;
 import com.schecks.lifesmp.LivesData;
 import net.minecraft.network.chat.Component;
@@ -9,38 +8,21 @@ import net.minecraft.network.chat.TextColor;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ResultSlot;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * Counts Life Shard crafts toward the lifetime limit.
+ *
+ * onTake is declared on ResultSlot itself, so this mixin targets ResultSlot
+ * directly. The complementary "block when at limit" check lives in SlotMixin
+ * because mayPickup is only declared on the Slot superclass.
+ */
 @Mixin(ResultSlot.class)
 public abstract class CraftingResultSlotMixin {
-    @Shadow @Final private Player player;
-
-    @Inject(method = "mayPickup", at = @At("HEAD"), cancellable = true)
-    private void lifesmp$blockLifeShardWhenAtLimit(Player playerEntity, CallbackInfoReturnable<Boolean> cir) {
-        if (!(playerEntity instanceof ServerPlayer sp)) return;
-        if (sp.level().getServer() == null) return;
-        ItemStack stack = ((Slot)(Object)this).getItem();
-        if (!LifeItems.isLifeShard(stack)) return;
-        LivesData data = LivesData.get(sp.level().getServer());
-        int craftLimit = LifeConfig.get().craftLimit;
-        if (data.getCrafted(sp.getUUID()) >= craftLimit) {
-            sp.sendSystemMessage(
-                Component.literal("You have reached the lifetime crafting limit (" + craftLimit + ") for Life Shards.")
-                    .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFF4C4C))),
-                true
-            );
-            cir.setReturnValue(false);
-        }
-    }
-
     @Inject(method = "onTake", at = @At("HEAD"))
     private void lifesmp$countLifeShardCraft(Player playerEntity, ItemStack stack, CallbackInfo ci) {
         if (!(playerEntity instanceof ServerPlayer sp)) return;
@@ -52,8 +34,7 @@ public abstract class CraftingResultSlotMixin {
         if (take > 0) {
             data.addCrafted(sp.getUUID(), take);
         }
-        int newRemaining = data.remainingCrafts(sp.getUUID());
-        if (newRemaining == 0) {
+        if (data.remainingCrafts(sp.getUUID()) == 0) {
             sp.sendSystemMessage(
                 Component.literal("You have crafted the maximum number of Life Shards.")
                     .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFFE17B))),
