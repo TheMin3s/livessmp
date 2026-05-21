@@ -32,11 +32,13 @@ public final class LifeCommand {
             .then(Commands.literal("crystal")
                 .then(Commands.argument("player", StringArgumentType.word())
                     .executes(LifeCommand::useCrystal)))
-            // Upper bound is a generous static literal — the real limit is
-            // validated against the live config in the withdraw handler.
+            // Bare /life withdraw defaults to 1; the explicit form takes a
+            // quantity. Upper bound is a generous static literal — the real
+            // limit is validated against the live config in the handler.
             .then(Commands.literal("withdraw")
+                .executes(ctx -> withdraw(ctx, 1))
                 .then(Commands.argument("quantity", IntegerArgumentType.integer(1, 1000))
-                    .executes(LifeCommand::withdraw)))
+                    .executes(ctx -> withdraw(ctx, IntegerArgumentType.getInteger(ctx, "quantity")))))
             .then(Commands.literal("deposit")
                 .executes(LifeCommand::deposit))
         );
@@ -87,12 +89,11 @@ public final class LifeCommand {
         return 1;
     }
 
-    private static int withdraw(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+    private static int withdraw(CommandContext<CommandSourceStack> ctx, int quantity) throws CommandSyntaxException {
         ServerPlayer self = ctx.getSource().getPlayerOrException();
         MinecraftServer server = self.level().getServer();
         if (server == null) return 0;
 
-        int quantity = IntegerArgumentType.getInteger(ctx, "quantity");
         LivesData data = LivesData.get(server);
         int current = data.getLives(self.getUUID());
         int floor = LifeConfig.get().minLivesAfterWithdraw;

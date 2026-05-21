@@ -3,6 +3,7 @@ package com.schecks.lifesmp;
 import com.schecks.lifesmp.commands.LifeCommand;
 import com.schecks.lifesmp.commands.LivesCommand;
 import com.schecks.lifesmp.events.DeathHandler;
+import com.schecks.lifesmp.events.InteractHandler;
 import com.schecks.lifesmp.events.JoinHandler;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -17,6 +18,7 @@ public class LifeSMP implements ModInitializer {
         FileOffers.registerPayload();
         DeathHandler.register();
         JoinHandler.register();
+        InteractHandler.register();
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             LifeCommand.register(dispatcher);
             LivesCommand.register(dispatcher);

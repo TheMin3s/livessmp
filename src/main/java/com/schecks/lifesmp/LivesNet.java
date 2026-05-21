@@ -52,11 +52,28 @@ public final class LivesNet {
      * it's just the standard title/subtitle packet trio; an empty title is
      * sent so only the subtitle line is visible.
      */
-    public static void showLivesSubtitle(ServerPlayer player, int lives, int max) {
-        // fadeIn 10t (0.5s), stay 100t (5s), fadeOut 20t (1s)
-        player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 100, 20));
-        player.connection.send(new ClientboundSetSubtitleTextPacket(heartBar(lives, max)));
+    public static void showLivesSubtitle(ServerPlayer player, int lives) {
+        // fadeIn 10t (0.5s), stay 200t (10s), fadeOut 20t (1s)
+        player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 200, 20));
+        player.connection.send(new ClientboundSetSubtitleTextPacket(subtitleHearts(lives)));
         player.connection.send(new ClientboundSetTitleTextPacket(Component.empty()));
+    }
+
+    /**
+     * Subtitle content: up to 10 filled hearts (never more, even if a player
+     * has more lives), then the exact count as "&lt;n&gt; hearts remaining".
+     * Single line — Minecraft's subtitle slot doesn't render line breaks.
+     */
+    private static Component subtitleHearts(int lives) {
+        int shown = Math.min(Math.max(lives, 0), 10);
+        MutableComponent row = Component.empty();
+        for (int i = 0; i < shown; i++) {
+            row.append(Component.literal("❤")
+                .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(FILLED_COLOR))));
+        }
+        row.append(Component.literal("  " + lives + " heart" + (lives == 1 ? "" : "s") + " remaining")
+            .setStyle(Style.EMPTY.withColor(net.minecraft.ChatFormatting.WHITE)));
+        return row;
     }
 
     /**

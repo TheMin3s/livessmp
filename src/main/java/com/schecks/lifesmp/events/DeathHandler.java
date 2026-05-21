@@ -70,8 +70,8 @@ public final class DeathHandler {
             }
 
             LifeUtil.refreshTabName(server, victim);
-            // Flash the victim's remaining hearts in the subtitle for ~5s.
-            LivesNet.showLivesSubtitle(victim, victimLives, cfg.maxLives);
+            // Flash the victim's remaining hearts in the subtitle for ~10s.
+            LivesNet.showLivesSubtitle(victim, victimLives);
 
             if (victimLives <= 0 && cfg.banOnZero) {
                 final NameAndId target = new NameAndId(victim.getUUID(), victim.getGameProfile().name());
