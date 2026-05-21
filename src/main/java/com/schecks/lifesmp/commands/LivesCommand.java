@@ -76,6 +76,8 @@ public final class LivesCommand {
             .then(Commands.literal("player")
                 .then(Commands.argument("name", StringArgumentType.word())
                     .executes(LivesCommand::lookup)))
+            .then(Commands.literal("version")
+                .executes(LivesCommand::version))
             // Player-facing file pickup. /lives files lists the server's
             // shared/ folder; /lives get downloads one entry (client confirms
             // + saves it). Folders arrive zipped.
@@ -197,6 +199,16 @@ public final class LivesCommand {
             false
         );
         return lives;
+    }
+
+    private static int version(CommandContext<CommandSourceStack> ctx) {
+        String v = UpdateChecker.currentVersion();
+        ctx.getSource().sendSuccess(() ->
+            Component.literal("LifeSMP ").setStyle(Style.EMPTY.withColor(ChatFormatting.GOLD))
+                .append(Component.literal("v" + v).setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))),
+            false
+        );
+        return 1;
     }
 
     private static int pardon(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -346,6 +358,7 @@ public final class LivesCommand {
             .append(cmd("/lives config",              "[admin] View/change mod settings")).append("\n")
             .append(cmd("/lives update version",      "[admin] Check if the mod is up to date")).append("\n")
             .append(cmd("/lives update",              "[admin] Download + install the latest mod version")).append("\n")
+            .append(cmd("/lives version",             "Show the installed LifeSMP version")).append("\n")
             .append(cmd("/lives help",                "Show this message"));
         ctx.getSource().sendSuccess(() -> lines, false);
         return 1;
