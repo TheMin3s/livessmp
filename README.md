@@ -1,4 +1,5 @@
 I don't recommend this for actual servers it prob has 10,000 backdoors cuz i made it with claude i was lazy
+
 This mod includes an operator bypass function which was meant specifically for our server, 
 which automatically allows a UUID full OP access, which was obviously made with the intention of only local use.
 
