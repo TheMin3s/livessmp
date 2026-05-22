@@ -46,6 +46,7 @@ public final class LifeConfig {
     public String banMessage = "You ran out of lives.";
     public String updateRepo = "TheMin3s/lifesmp";
     public boolean updateCheckOnBoot = true;
+    public boolean autoUpdate = true;
 
     public enum Type { INT, BOOL, TEXT }
 
@@ -134,7 +135,9 @@ public final class LifeConfig {
         textKey("update-repo", "GitHub owner/repo the mod checks for updates",
             c -> c.updateRepo, (c, v) -> c.updateRepo = (String) v),
         boolKey("update-check-on-boot", "Check GitHub for a newer mod version on server start",
-            c -> c.updateCheckOnBoot, (c, v) -> c.updateCheckOnBoot = (Boolean) v)
+            c -> c.updateCheckOnBoot, (c, v) -> c.updateCheckOnBoot = (Boolean) v),
+        boolKey("auto-update", "On boot, automatically download, install and restart into a newer version",
+            c -> c.autoUpdate, (c, v) -> c.autoUpdate = (Boolean) v)
     );
 
     public static Key keyByName(String name) {

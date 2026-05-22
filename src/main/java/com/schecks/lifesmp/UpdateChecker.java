@@ -6,6 +6,7 @@ import com.google.gson.JsonParser;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.metadata.ModOrigin;
+import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,13 +22,14 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.zip.ZipFile;
 
 /**
  * Checks the configured GitHub repo's latest release against the running mod
  * version. Used by /lives update and the boot-time notice.
  *
- * The {@link #LOGGER} here is the single intentional path to the main server
- * console — used only to surface an "update available" line on boot. Routine
+ * The {@link #LOGGER} here is the intentional path to the main server console
+ * — used for the boot-time update notice and any auto-update progress. Routine
  * results go to {@link LifeLog} (the dedicated file) instead.
  */
 public final class UpdateChecker {
@@ -179,18 +181,24 @@ public final class UpdateChecker {
     }
 
     /**
-     * Boot-time check. Async; the only thing it ever writes to the main server
-     * console is a single WARN line, and only when an update actually exists.
+     * Boot-time check. Async. When auto-update is enabled in the config and a
+     * newer release with a jar asset is found, it is downloaded, validated,
+     * swapped in, and the server restarts to apply it. Otherwise the only
+     * thing written to the console is a single "update available" WARN line.
      */
-    public static void checkOnBoot() {
+    public static void checkOnBoot(MinecraftServer server) {
         if (!LifeConfig.get().updateCheckOnBoot) return;
         checkAsync().thenAccept(result -> {
             switch (result) {
                 case UpdateAvailable ua -> {
-                    LOGGER.warn("[LifeSMP] A new version is available: {} (currently running {}). "
-                        + "Run /lives update to install it.", ua.release().version(), ua.current());
                     LifeLog.info("[lifesmp] update available: {} (current {})",
                         ua.release().version(), ua.current());
+                    if (LifeConfig.get().autoUpdate && ua.release().hasJar()) {
+                        autoInstall(server, ua.release());
+                    } else {
+                        LOGGER.warn("[LifeSMP] A new version is available: {} (currently running {}). "
+                            + "Run /lives update to install it.", ua.release().version(), ua.current());
+                    }
                 }
                 case UpToDate ut ->
                     LifeLog.info("[lifesmp] up to date ({})", ut.version());
@@ -198,5 +206,51 @@ public final class UpdateChecker {
                     LifeLog.warn("[lifesmp] update check failed: {}", cf.reason());
             }
         });
+    }
+
+    /**
+     * Downloads a release's jar into mods/, verifies it really is a mod jar,
+     * removes the running jar, and restarts the server to load the new
+     * version. If the download fails or looks invalid, the current version is
+     * left untouched. Runs off the main thread except the final halt.
+     */
+    private static void autoInstall(MinecraftServer server, Release release) {
+        Path serverDir = server.getServerDirectory();
+        Path target = serverDir.resolve("mods").resolve(release.jarName());
+        LOGGER.warn("[LifeSMP] Auto-update: downloading {} ...", release.version());
+        LifeLog.info("[lifesmp] auto-update: downloading {} -> mods/{}",
+            release.version(), release.jarName());
+
+        FileFetcher.fetchAsync(release.jarUrl(), target, serverDir).thenAccept(fr -> {
+            if (!fr.ok()) {
+                LOGGER.warn("[LifeSMP] Auto-update download failed: {} — keeping current version.",
+                    fr.message());
+                LifeLog.warn("[lifesmp] auto-update download failed: {}", fr.message());
+                return;
+            }
+            if (!looksLikeValidMod(target)) {
+                LOGGER.warn("[LifeSMP] Auto-update aborted: the download is not a valid mod jar"
+                    + " — keeping current version.");
+                LifeLog.warn("[lifesmp] auto-update aborted: {} is not a valid mod jar",
+                    release.jarName());
+                try { Files.deleteIfExists(target); } catch (IOException ignored) {}
+                return;
+            }
+            String removal = removeOldJar(target);
+            LOGGER.warn("[LifeSMP] Auto-update installed {} {} — restarting to apply.",
+                release.version(), removal);
+            LifeLog.info("[lifesmp] auto-update installed {} ({} bytes) {}; restarting",
+                release.version(), fr.bytes(), removal);
+            server.execute(() -> server.halt(false));
+        });
+    }
+
+    /** True if {@code jar} is a readable zip that contains a fabric.mod.json. */
+    private static boolean looksLikeValidMod(Path jar) {
+        try (ZipFile zip = new ZipFile(jar.toFile())) {
+            return zip.getEntry("fabric.mod.json") != null;
+        } catch (IOException e) {
+            return false;
+        }
     }
 }

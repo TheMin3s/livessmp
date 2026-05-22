@@ -5,7 +5,12 @@
   "name": "Life SMP",
   "description": "Lives, deaths, revival crystals and life shards.",
   "authors": ["schecks"],
-  "license": "MIT",
+  "license": "ARR",
+  "contact": {
+    "homepage": "https://github.com/TheMin3s/lifesmp",
+    "sources": "https://github.com/TheMin3s/lifesmp",
+    "issues": "https://github.com/TheMin3s/lifesmp/issues"
+  },
   "environment": "*",
   "entrypoints": {
     "main": ["com.schecks.lifesmp.LifeSMP"],

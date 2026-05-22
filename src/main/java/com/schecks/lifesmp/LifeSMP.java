@@ -34,10 +34,11 @@ public class LifeSMP implements ModInitializer {
             LifeConfig.init(server.getServerDirectory());
             FileShare.init(server);
         });
-        // Boot-time update check — runs after config is loaded. The only line
-        // this can put on the main console is a single "update available" warning.
-        ServerLifecycleEvents.SERVER_STARTED.register(server ->
-            UpdateChecker.checkOnBoot());
+        // Boot-time update check — runs after config is loaded. With auto-update
+        // enabled (the default) it downloads, installs and restarts into a newer
+        // version on its own; otherwise it just logs a single "update available"
+        // warning to the console.
+        ServerLifecycleEvents.SERVER_STARTED.register(UpdateChecker::checkOnBoot);
         ServerLifecycleEvents.SERVER_STOPPED.register(server ->
             LifeLog.close());
     }
