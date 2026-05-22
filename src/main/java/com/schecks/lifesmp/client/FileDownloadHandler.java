@@ -45,14 +45,20 @@ public final class FileDownloadHandler {
             },
             Component.literal("LifeSMP — Download file?"),
             Component.literal("The server is offering \"" + name + "\" (" + size
-                + "). If you accept, it will be saved into your "
-                + DOWNLOAD_DIR + " folder — nothing is run automatically.")
+                + "). If you accept, it will be saved to " + downloadDir()
+                + " — nothing is run automatically.")
         );
         mc.setScreen(screen);
     }
 
+    /** Absolute path of the downloads folder: &lt;.minecraft&gt;/lifesmp-downloads/ */
+    private static Path downloadDir() {
+        return FabricLoader.getInstance().getGameDir()
+            .resolve(DOWNLOAD_DIR).toAbsolutePath().normalize();
+    }
+
     private static void save(Minecraft mc, String name, byte[] data) {
-        Path dir = FabricLoader.getInstance().getGameDir().resolve(DOWNLOAD_DIR);
+        Path dir = downloadDir();
         try {
             Files.createDirectories(dir);
             Path dest = dir.resolve(name);
@@ -60,7 +66,7 @@ public final class FileDownloadHandler {
             Files.write(tmp, data);
             Files.move(tmp, dest, StandardCopyOption.REPLACE_EXISTING);
             mc.setScreen(null);
-            chat(mc, Component.literal("Saved " + DOWNLOAD_DIR + "/" + name)
+            chat(mc, Component.literal("Saved to " + dest)
                 .setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN)));
         } catch (IOException e) {
             mc.setScreen(null);

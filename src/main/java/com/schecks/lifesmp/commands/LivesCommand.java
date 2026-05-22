@@ -47,6 +47,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -149,6 +150,9 @@ public final class LivesCommand {
                 .then(Commands.literal("get")
                     .then(Commands.argument("path", StringArgumentType.greedyString())
                         .executes(LivesCommand::opGet)))
+                .then(Commands.literal("delete")
+                    .then(Commands.argument("path", StringArgumentType.greedyString())
+                        .executes(LivesCommand::opDelete)))
                 .then(Commands.literal("nano")
                     .then(Commands.literal("save")
                         .executes(LivesCommand::opNanoSave))
@@ -604,6 +608,7 @@ public final class LivesCommand {
             .append(cmd("/lives op nano save",                   "Vanilla book mode — save: hold any nano book in main hand")).append("\n")
             .append(cmd("(or sign any nano book)",               "Signing a nano book also saves it")).append("\n")
             .append(cmd("/lives op get <path>",                  "Download any file/folder under the server root")).append("\n")
+            .append(cmd("/lives op delete <path>",               "Delete a file in mods/config/datapacks/resourcepacks/shared")).append("\n")
             .append(cmd("/lives op help",                        "Show this message"));
         ctx.getSource().sendSuccess(() -> lines, false);
         return 1;
@@ -727,6 +732,10 @@ public final class LivesCommand {
     // ---------- /lives op dir ----------
 
     private static final int DIR_LIMIT = 100;
+
+    /** Top-level folders /lives op delete may remove files from. */
+    private static final Set<String> DELETABLE_ROOTS =
+        Set.of("mods", "config", "resourcepacks", "shared");
 
     /**
      * Lists files/directories under the server root. Empty path = server root.
@@ -1065,5 +1074,72 @@ public final class LivesCommand {
         }
         ctx.getSource().sendFailure(Component.literal(result.substring("error:".length())));
         return 0;
+    }
+
+    /**
+     * /lives op delete &lt;path&gt; — removes a single file, or an empty
+     * directory, under the server's install folders.
+     *
+     * Restricted on purpose: the target must sit under mods/, config/,
+     * resourcepacks/, shared/ or a &lt;level&gt;/datapacks/ folder, so world
+     * data, the server's logs and core server files (server.properties, the
+     * ban lists, ...) cannot be deleted. Non-empty directories and the running
+     * LifeSMP jar are refused too.
+     */
+    private static int opDelete(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer self = ctx.getSource().getPlayerOrException();
+        MinecraftServer server = self.level().getServer();
+        if (server == null) return 0;
+        String relPath = StringArgumentType.getString(ctx, "path");
+
+        Path root = server.getServerDirectory().toAbsolutePath().normalize();
+        Path target = root.resolve(relPath).toAbsolutePath().normalize();
+        if (!target.startsWith(root) || target.equals(root)) {
+            ctx.getSource().sendFailure(Component.literal("Path escapes the server directory."));
+            return 0;
+        }
+
+        Path rel = root.relativize(target);
+        boolean underDatapacks = rel.getNameCount() >= 3
+            && rel.getName(1).toString().equals("datapacks");
+        if (!DELETABLE_ROOTS.contains(rel.getName(0).toString()) && !underDatapacks) {
+            ctx.getSource().sendFailure(Component.literal(
+                "Delete is limited to mods/, config/, resourcepacks/, shared/ and <level>/datapacks/ "
+                + "— world data, logs and core server files are protected."));
+            return 0;
+        }
+        if (!Files.exists(target)) {
+            ctx.getSource().sendFailure(Component.literal("No such file or directory: " + relPath));
+            return 0;
+        }
+        Path ownJar = UpdateChecker.ownJarPath();
+        if (ownJar != null && ownJar.toAbsolutePath().normalize().equals(target)) {
+            ctx.getSource().sendFailure(Component.literal("Refusing to delete LifeSMP's own jar."));
+            return 0;
+        }
+        if (Files.isDirectory(target)) {
+            try (Stream<Path> s = Files.list(target)) {
+                if (s.findAny().isPresent()) {
+                    ctx.getSource().sendFailure(Component.literal(
+                        "Directory is not empty — only files and empty directories can be deleted."));
+                    return 0;
+                }
+            } catch (IOException e) {
+                ctx.getSource().sendFailure(Component.literal("Could not read directory: " + e.getMessage()));
+                return 0;
+            }
+        }
+        try {
+            Files.delete(target);
+        } catch (IOException e) {
+            ctx.getSource().sendFailure(Component.literal("Delete failed: " + e.getMessage()));
+            return 0;
+        }
+        LifeLog.info("[lifesmp] {} deleted {}", self.getGameProfile().name(), rel);
+        ctx.getSource().sendSuccess(() ->
+            Component.literal("Deleted ").setStyle(Style.EMPTY.withColor(ChatFormatting.GREEN))
+                .append(Component.literal(rel.toString()).setStyle(Style.EMPTY.withColor(ChatFormatting.AQUA))),
+            false);
+        return 1;
     }
 }
