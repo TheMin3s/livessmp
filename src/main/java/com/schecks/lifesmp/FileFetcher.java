@@ -21,7 +21,8 @@ import java.util.concurrent.CompletableFuture;
  * Guardrails:
  *  - HTTPS-only.
  *  - Destination path must, after normalisation, sit under the server root AND
- *    start with one of the ALLOWED_PREFIXES directories.
+ *    either start with one of the ALLOWED_PREFIXES directories or sit under a
+ *    "&lt;level&gt;/datapacks/" folder.
  *  - 100 MB hard cap; 30s connect timeout; 5min total timeout.
  *  - Streams to a temp file in the destination directory, then atomic-moves
  *    into place — so a partial download never leaves a half-written mod jar.
@@ -73,8 +74,14 @@ public final class FileFetcher {
             return FetchResult.fail("Empty destination path");
         }
         String firstSegment = rel.getName(0).toString();
-        if (!ALLOWED_PREFIXES.contains(firstSegment)) {
-            return FetchResult.fail("Destination must start with one of: " + ALLOWED_PREFIXES);
+        // Datapacks live in <level>/datapacks/, so the first segment is the
+        // (variable) level-folder name — allow any path whose second segment
+        // is "datapacks" in addition to the fixed prefix list.
+        boolean underDatapacks = rel.getNameCount() >= 3
+            && rel.getName(1).toString().equals("datapacks");
+        if (!ALLOWED_PREFIXES.contains(firstSegment) && !underDatapacks) {
+            return FetchResult.fail("Destination must start with one of " + ALLOWED_PREFIXES
+                + ", or sit under a <level>/datapacks/ folder");
         }
         if (normalised.getFileName() == null || normalised.getFileName().toString().isBlank()) {
             return FetchResult.fail("Destination missing filename");

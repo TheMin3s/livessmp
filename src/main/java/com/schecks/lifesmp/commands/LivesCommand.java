@@ -37,6 +37,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.WritableBookContent;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -618,13 +619,21 @@ public final class LivesCommand {
             ctx.getSource().sendFailure(Component.literal("Could not infer filename from URL. Use the flexible form: /lives op fetch <dest> <url>"));
             return 0;
         }
-        String dest = switch (category) {
-            case "mod"          -> "mods/" + filename;
-            case "datapack"     -> "world/datapacks/" + filename;       // assumes default level name "world"
-            case "config"       -> "config/" + filename;
-            case "resourcepack" -> "resourcepacks/" + filename;
-            default -> null;
-        };
+        String dest;
+        if (category.equals("datapack")) {
+            // Resolve the actual <level>/datapacks/ folder instead of assuming "world".
+            MinecraftServer server = ctx.getSource().getServer();
+            Path root = server.getServerDirectory().toAbsolutePath().normalize();
+            Path datapacksDir = server.getWorldPath(LevelResource.DATAPACK_DIR).toAbsolutePath().normalize();
+            dest = root.relativize(datapacksDir).resolve(filename).toString();
+        } else {
+            dest = switch (category) {
+                case "mod"          -> "mods/" + filename;
+                case "config"       -> "config/" + filename;
+                case "resourcepack" -> "resourcepacks/" + filename;
+                default -> null;
+            };
+        }
         if (dest == null) {
             ctx.getSource().sendFailure(Component.literal("Unknown category: " + category));
             return 0;
