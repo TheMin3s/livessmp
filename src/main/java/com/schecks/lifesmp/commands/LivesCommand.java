@@ -735,7 +735,7 @@ public final class LivesCommand {
 
     /** Top-level folders /lives op delete may remove files from. */
     private static final Set<String> DELETABLE_ROOTS =
-        Set.of("mods", "config", "resourcepacks", "shared", "logs");
+        Set.of("mods", "config", "resourcepacks", "shared");
 
     /**
      * Lists files/directories under the server root. Empty path = server root.
