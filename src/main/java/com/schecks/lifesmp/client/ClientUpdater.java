@@ -42,12 +42,27 @@ public final class ClientUpdater {
     public static void onServerVersion(String serverVersion) {
         if (handled || serverVersion == null || serverVersion.isBlank()) return;
         String clientVersion = UpdateChecker.currentVersion();
-        // Only act when the client is genuinely behind the server.
-        if (UpdateChecker.compareVersions(serverVersion, clientVersion) <= 0) return;
+        int cmp = UpdateChecker.compareVersions(serverVersion, clientVersion);
+        if (cmp == 0) return;                  // versions match — nothing to do
         handled = true;
-        LOG.info("[LifeSMP] client {} is behind server {} — fetching update",
-            clientVersion, serverVersion);
-        CompletableFuture.runAsync(() -> downloadAndSwap(serverVersion, clientVersion));
+        if (cmp > 0) {
+            // Server newer than client — auto-update to match.
+            LOG.info("[LifeSMP] client {} is behind server {} — fetching update",
+                clientVersion, serverVersion);
+            CompletableFuture.runAsync(() -> downloadAndSwap(serverVersion, clientVersion));
+        } else {
+            // Server older than client — warn the player to nag the owner.
+            LOG.info("[LifeSMP] server {} is older than client {} — showing warning",
+                serverVersion, clientVersion);
+            Minecraft.getInstance().execute(() ->
+                Minecraft.getInstance().setScreen(
+                    new ServerOutdatedScreen(serverVersion, clientVersion)));
+        }
+    }
+
+    /** Forget that we already prompted — so each new server is evaluated fresh. */
+    public static void reset() {
+        handled = false;
     }
 
     private static void downloadAndSwap(String serverVersion, String clientVersion) {

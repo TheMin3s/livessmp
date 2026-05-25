@@ -16,6 +16,12 @@ public final class ClientLivesState {
         maxLives = newMax;
     }
 
+    /** Forgets the cached lives — so the HUD vanishes on disconnect / vanilla servers. */
+    public static void reset() {
+        lives = -1;
+        maxLives = 0;
+    }
+
     public static boolean hasData() {
         return lives >= 0;
     }

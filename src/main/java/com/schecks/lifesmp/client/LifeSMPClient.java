@@ -9,6 +9,7 @@ import com.schecks.lifesmp.LivesPayload;
 import com.schecks.lifesmp.NanoOpenPayload;
 import com.schecks.lifesmp.ServerVersionPayload;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -73,6 +74,13 @@ public class LifeSMPClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(ConsoleLinesPayload.TYPE, (payload, context) ->
             context.client().execute(() -> ConsoleScreen.appendLines(payload.lines())));
 
+        // Drop cached state when we leave a server, so the HUD vanishes on
+        // vanilla servers and the next join is evaluated fresh by ClientUpdater.
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            ClientLivesState.reset();
+            ClientUpdater.reset();
+        });
+
         // Right-clicking a Revival Crystal opens a name-entry screen that runs
         // /life crystal <name> for you. The command still does all the work.
         UseItemCallback.EVENT.register(LifeSMPClient::onUseItem);
@@ -98,7 +106,7 @@ public class LifeSMPClient implements ClientModInitializer {
         int lives = ClientLivesState.lives();
         Font font = mc.font;
         int x = g.guiWidth() / 2 - 91;     // left edge of the hotbar
-        int y = g.guiHeight() - 59;        // one row above the armor bar
+        int y = g.guiHeight() - 58;        // sits right on top of the armor bar
 
         // Hardcore heart icon + "x<lives>" — compact, armor-bar styled.
         g.blitSprite(RenderPipelines.GUI_TEXTURED, HARDCORE_HEART, x, y, 9, 9);

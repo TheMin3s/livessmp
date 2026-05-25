@@ -112,6 +112,20 @@ public final class ConsoleScreen extends Screen {
         }
         void add(LineEntry e) { addEntry(e); }
         void reset()         { clearEntries(); }
+
+        /** Widen rows to the full list (default is a centered ~220 px column,
+         *  which clips long log lines). Leave a small inset for the scrollbar. */
+        @Override
+        public int getRowWidth() {
+            return this.width - 8;
+        }
+
+        /** Anchor rows to the list's left edge instead of centering them, so
+         *  console lines start at the screen's left edge. */
+        @Override
+        public int getRowLeft() {
+            return this.getX();
+        }
     }
 
     private static final class LineEntry extends ObjectSelectionList.Entry<LineEntry> {
