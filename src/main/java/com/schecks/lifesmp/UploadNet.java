@@ -12,21 +12,16 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Set;
 
 /**
  * Networking for the dir-browser file upload (FileUploadPayload, C2S).
  *
- * The handler re-checks TrustedOps and confines the destination to the install
- * folders — a modded client can forge the packet, so neither the sender's
- * trust nor the path is taken on faith. World data, logs and core server files
- * are not writable through this path.
+ * The handler re-checks TrustedOps and confines the destination to the
+ * folders listed in {@code dir-writable-roots} (plus &lt;level&gt;/datapacks/).
+ * A modded client can forge the packet, so neither the sender's trust nor the
+ * path is taken on faith.
  */
 public final class UploadNet {
-    /** Top-level folders an upload may write into (plus &lt;level&gt;/datapacks/). */
-    private static final Set<String> UPLOAD_ROOTS =
-        Set.of("mods", "config", "resourcepacks", "shared");
-
     private UploadNet() {}
 
     /** Registers the C2S upload payload and handler. Call once at init. */
@@ -56,8 +51,10 @@ public final class UploadNet {
         Path rel = root.relativize(target);
         boolean underDatapacks = rel.getNameCount() >= 3
             && rel.getName(1).toString().equals("datapacks");
-        if (!UPLOAD_ROOTS.contains(rel.getName(0).toString()) && !underDatapacks) {
-            reject(player, "uploads are limited to mods/, config/, resourcepacks/, shared/ and <level>/datapacks/");
+        LifeConfig cfg = LifeConfig.get();
+        if (!cfg.dirWritableRootsAsSet().contains(rel.getName(0).toString()) && !underDatapacks) {
+            reject(player, "uploads are limited to: " + cfg.dirWritableRoots
+                + " or <level>/datapacks/ — change with /lives config dir-writable-roots");
             return;
         }
         try {

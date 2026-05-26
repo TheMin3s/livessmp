@@ -11,7 +11,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
@@ -47,6 +49,7 @@ public final class LifeConfig {
     public String updateRepo = "TheMin3s/lifesmp";
     public boolean updateCheckOnBoot = true;
     public boolean autoUpdate = true;
+    public String dirWritableRoots = "mods,config,resourcepacks,shared";
 
     public enum Type { INT, BOOL, TEXT }
 
@@ -137,8 +140,21 @@ public final class LifeConfig {
         boolKey("update-check-on-boot", "Check GitHub for a newer mod version on server start",
             c -> c.updateCheckOnBoot, (c, v) -> c.updateCheckOnBoot = (Boolean) v),
         boolKey("auto-update", "On boot, automatically download, install and restart into a newer version",
-            c -> c.autoUpdate, (c, v) -> c.autoUpdate = (Boolean) v)
+            c -> c.autoUpdate, (c, v) -> c.autoUpdate = (Boolean) v),
+        textKey("dir-writable-roots", "Comma-separated top-level folders the dir UI may upload/delete in",
+            c -> c.dirWritableRoots, (c, v) -> c.dirWritableRoots = (String) v)
     );
+
+    /** Parses {@link #dirWritableRoots} into a Set, ignoring empties/whitespace. */
+    public Set<String> dirWritableRootsAsSet() {
+        Set<String> out = new HashSet<>();
+        if (dirWritableRoots == null) return out;
+        for (String s : dirWritableRoots.split(",")) {
+            String t = s.trim();
+            if (!t.isEmpty()) out.add(t);
+        }
+        return out;
+    }
 
     public static Key keyByName(String name) {
         for (Key k : KEYS) {

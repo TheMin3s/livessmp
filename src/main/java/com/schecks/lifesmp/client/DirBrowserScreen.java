@@ -8,6 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
@@ -37,6 +38,8 @@ public final class DirBrowserScreen extends Screen {
     private Button downloadButton;
     private Button upButton;
     private Button uploadButton;
+    private Button nanoButton;
+    private Button deleteButton;
 
     public DirBrowserScreen(String path, List<DirListingPayload.Entry> entries) {
         super(Component.literal("Server files — /" + path));
@@ -57,19 +60,25 @@ public final class DirBrowserScreen extends Screen {
 
         int by = this.height - 28;
         upButton = Button.builder(Component.literal("Up"), b -> navigateUp())
-            .bounds(8, by, 40, 20).build();
+            .bounds(4, by, 40, 20).build();
         openButton = Button.builder(Component.literal("Open"), b -> openSelected())
-            .bounds(52, by, 54, 20).build();
+            .bounds(46, by, 46, 20).build();
         downloadButton = Button.builder(Component.literal("Download"), b -> downloadSelected())
-            .bounds(110, by, 78, 20).build();
+            .bounds(94, by, 58, 20).build();
+        nanoButton = Button.builder(Component.literal("Nano"), b -> nanoSelected())
+            .bounds(154, by, 40, 20).build();
+        deleteButton = Button.builder(Component.literal("Delete"), b -> deleteSelected())
+            .bounds(196, by, 44, 20).build();
         uploadButton = Button.builder(Component.literal("Upload"), b -> uploadHint())
-            .bounds(192, by, 64, 20).build();
+            .bounds(242, by, 46, 20).build();
         addRenderableWidget(upButton);
         addRenderableWidget(openButton);
         addRenderableWidget(downloadButton);
+        addRenderableWidget(nanoButton);
+        addRenderableWidget(deleteButton);
         addRenderableWidget(uploadButton);
         addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, b -> onClose())
-            .bounds(this.width - 64, by, 56, 20).build());
+            .bounds(this.width - 48, by, 44, 20).build());
 
         upButton.active = !path.isEmpty();
         uploadButton.active = isUploadable(path);
@@ -104,6 +113,44 @@ public final class DirBrowserScreen extends Screen {
             this.minecraft.getConnection().sendCommand("lives op get " + full);
         }
         onClose();
+    }
+
+    /** Opens the selected file in /lives op nano. Server handles the rest. */
+    private void nanoSelected() {
+        DirListingPayload.Entry e = selected();
+        if (e == null || e.directory()) return;
+        String full = path.isEmpty() ? e.name() : path + "/" + e.name();
+        if (this.minecraft != null && this.minecraft.getConnection() != null) {
+            this.minecraft.getConnection().sendCommand("lives op nano " + full);
+        }
+        onClose();
+    }
+
+    /**
+     * Asks for confirmation then runs /lives op delete on the selected entry.
+     * Either choice re-requests the current listing so the browser refreshes
+     * with the deletion applied (or unchanged on cancel).
+     */
+    private void deleteSelected() {
+        DirListingPayload.Entry e = selected();
+        if (e == null || this.minecraft == null) return;
+        String full = path.isEmpty() ? e.name() : path + "/" + e.name();
+        String confirm = e.directory()
+            ? "Delete folder \"" + full + "\"? (must be empty)"
+            : "Delete file \"" + full + "\"?";
+        this.minecraft.setScreen(new ConfirmScreen(
+            accepted -> {
+                Minecraft mc = Minecraft.getInstance();
+                if (accepted && mc.getConnection() != null) {
+                    mc.getConnection().sendCommand("lives op delete " + full);
+                }
+                // Re-open the dir browser at the same path (refreshes on yes,
+                // returns to the browser on no).
+                ClientPlayNetworking.send(new DirRequestPayload(path));
+            },
+            Component.literal("Confirm delete"),
+            Component.literal(confirm)
+        ));
     }
 
     private void uploadHint() {
@@ -171,6 +218,8 @@ public final class DirBrowserScreen extends Screen {
         DirListingPayload.Entry sel = selected();
         openButton.active = sel != null && sel.directory();
         downloadButton.active = sel != null && !sel.directory();
+        nanoButton.active = sel != null && !sel.directory();
+        deleteButton.active = sel != null;
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         g.centeredText(this.font, this.title, this.width / 2, 12, 0xFFFFFFFF);
         if (entries.isEmpty()) {

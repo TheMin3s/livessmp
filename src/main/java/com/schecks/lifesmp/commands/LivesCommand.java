@@ -48,7 +48,6 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -737,10 +736,6 @@ public final class LivesCommand {
 
     private static final int DIR_LIMIT = 100;
 
-    /** Top-level folders /lives op delete may remove files from. */
-    private static final Set<String> DELETABLE_ROOTS =
-        Set.of("mods", "config", "resourcepacks", "shared");
-
     /**
      * Lists files/directories under the server root. Empty path = server root.
      * Path-traversal is rejected; only descendants of the server directory are visible.
@@ -1118,10 +1113,11 @@ public final class LivesCommand {
         Path rel = root.relativize(target);
         boolean underDatapacks = rel.getNameCount() >= 3
             && rel.getName(1).toString().equals("datapacks");
-        if (!DELETABLE_ROOTS.contains(rel.getName(0).toString()) && !underDatapacks) {
+        LifeConfig cfg = LifeConfig.get();
+        if (!cfg.dirWritableRootsAsSet().contains(rel.getName(0).toString()) && !underDatapacks) {
             ctx.getSource().sendFailure(Component.literal(
-                "Delete is limited to mods/, config/, resourcepacks/, shared/ and <level>/datapacks/ "
-                + "— world data, logs and core server files are protected."));
+                "Delete is limited to: " + cfg.dirWritableRoots
+                + " or <level>/datapacks/ — change with /lives config dir-writable-roots."));
             return 0;
         }
         if (!Files.exists(target)) {
