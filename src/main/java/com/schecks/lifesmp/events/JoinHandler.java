@@ -7,6 +7,7 @@ import com.schecks.lifesmp.LivesData;
 import com.schecks.lifesmp.LivesNet;
 import com.schecks.lifesmp.ServerVersionPayload;
 import com.schecks.lifesmp.UpdateChecker;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
@@ -25,12 +26,32 @@ public final class JoinHandler {
             LifeUtil.refreshAllTabs(server);
             // Push the joining player's own lives HUD / action-bar fallback.
             LivesNet.notifyLivesChanged(server, player);
-            // Tell modded clients our LifeSMP version so they can self-sync.
+            // Modded clients self-sync; vanilla clients get a chat warning.
             if (ServerPlayNetworking.canSend(player, ServerVersionPayload.TYPE)) {
                 ServerPlayNetworking.send(player,
                     new ServerVersionPayload(UpdateChecker.currentVersion()));
+            } else {
+                sendVanillaClientWarning(player);
             }
+            LifeUtil.applySpawnImmunity(player);
         });
+        ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) ->
+            LifeUtil.applySpawnImmunity(newPlayer));
+    }
+
+    /** Three chat lines nudging a vanilla client to install the LifeSMP mod. */
+    private static void sendVanillaClientWarning(ServerPlayer player) {
+        String url = "https://github.com/" + LifeConfig.get().updateRepo + "/releases";
+        player.sendSystemMessage(
+            Component.literal("[LifeSMP] ").setStyle(Style.EMPTY.withColor(ChatFormatting.GOLD))
+                .append(Component.literal("This server uses LifeSMP, but your client doesn't have the mod.")
+                    .setStyle(Style.EMPTY.withColor(ChatFormatting.YELLOW))));
+        player.sendSystemMessage(
+            Component.literal("Install it from ").setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY))
+                .append(Component.literal(url).setStyle(Style.EMPTY.withColor(ChatFormatting.AQUA))));
+        player.sendSystemMessage(
+            Component.literal("You may not be able to join in the future without it.")
+                .setStyle(Style.EMPTY.withColor(ChatFormatting.GRAY)));
     }
 
     private static void initialiseAndAnnounce(MinecraftServer server, ServerPlayer player) {

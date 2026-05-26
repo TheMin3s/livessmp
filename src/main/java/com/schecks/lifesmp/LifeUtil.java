@@ -8,6 +8,8 @@ import net.minecraft.server.players.NameAndId;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.server.players.UserBanList;
 import net.minecraft.server.players.UserBanListEntry;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -85,6 +87,18 @@ public final class LifeUtil {
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             broadcastTabPacket(server, p);
         }
+    }
+
+    /**
+     * Grants the player a few seconds of damage immunity, applied on join and
+     * respawn. Implemented as Resistance V (amplifier 4 = 100% reduction) for
+     * {@code spawn-immunity-seconds} seconds. No effect when the config is 0.
+     */
+    public static void applySpawnImmunity(ServerPlayer player) {
+        int secs = LifeConfig.get().spawnImmunitySeconds;
+        if (secs <= 0) return;
+        player.addEffect(new MobEffectInstance(
+            MobEffects.RESISTANCE, secs * 20, 4, false, false, false));
     }
 
     private static void broadcastTabPacket(MinecraftServer server, ServerPlayer player) {

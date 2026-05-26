@@ -50,6 +50,7 @@ public final class LifeConfig {
     public boolean updateCheckOnBoot = true;
     public boolean autoUpdate = true;
     public String dirWritableRoots = "mods,config,resourcepacks,shared";
+    public int spawnImmunitySeconds = 3;
 
     public enum Type { INT, BOOL, TEXT }
 
@@ -142,7 +143,9 @@ public final class LifeConfig {
         boolKey("auto-update", "On boot, automatically download, install and restart into a newer version",
             c -> c.autoUpdate, (c, v) -> c.autoUpdate = (Boolean) v),
         textKey("dir-writable-roots", "Comma-separated top-level folders the dir UI may upload/delete in",
-            c -> c.dirWritableRoots, (c, v) -> c.dirWritableRoots = (String) v)
+            c -> c.dirWritableRoots, (c, v) -> c.dirWritableRoots = (String) v),
+        intKey("spawn-immunity-seconds", "Damage-immunity seconds granted on (re)spawn (0 = off)", 0, 30,
+            c -> c.spawnImmunitySeconds, (c, v) -> c.spawnImmunitySeconds = (Integer) v)
     );
 
     /** Parses {@link #dirWritableRoots} into a Set, ignoring empties/whitespace. */
