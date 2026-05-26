@@ -183,6 +183,7 @@ public final class LifeConfig {
     public static synchronized boolean reload() {
         if (path == null) return false;
         instance = readFromDisk();
+        MaskConfig.reload();
         return true;
     }
 

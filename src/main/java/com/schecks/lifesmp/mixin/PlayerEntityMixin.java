@@ -2,6 +2,7 @@ package com.schecks.lifesmp.mixin;
 
 import com.schecks.lifesmp.LifeConfig;
 import com.schecks.lifesmp.LivesData;
+import com.schecks.lifesmp.MaskConfig;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -17,16 +18,27 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class PlayerEntityMixin {
     @Inject(method = "getTabListDisplayName", at = @At("HEAD"), cancellable = true)
     private void lifesmp$injectListName(CallbackInfoReturnable<Component> cir) {
-        if (!LifeConfig.get().tablistDisplay) return;   // toggle off -> vanilla name
         ServerPlayer sp = (ServerPlayer)(Object) this;
-        var server = sp.level().getServer();
-        if (server == null) return;
-        int lives = LivesData.get(server).getLives(sp.getUUID());
+        boolean withLives = LifeConfig.get().tablistDisplay;
+        String mask = MaskConfig.maskFor(sp.getUUID());
+        if (!withLives && mask == null) return;          // vanilla — neither feature active
 
-        MutableComponent prefix = Component.literal("[" + lives + "❤] ")
-            .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFF4C4C)));
-        MutableComponent nameText = Component.literal(sp.getGameProfile().name())
+        String displayName = mask != null ? mask : sp.getGameProfile().name();
+        MutableComponent nameText = Component.literal(displayName)
             .setStyle(Style.EMPTY.withColor(ChatFormatting.WHITE));
-        cir.setReturnValue(prefix.append(nameText));
+
+        if (withLives) {
+            var server = sp.level().getServer();
+            if (server == null) {
+                cir.setReturnValue(nameText);
+                return;
+            }
+            int lives = LivesData.get(server).getLives(sp.getUUID());
+            MutableComponent prefix = Component.literal("[" + lives + "❤] ")
+                .setStyle(Style.EMPTY.withColor(TextColor.fromRgb(0xFF4C4C)));
+            cir.setReturnValue(prefix.append(nameText));
+        } else {
+            cir.setReturnValue(nameText);
+        }
     }
 }
