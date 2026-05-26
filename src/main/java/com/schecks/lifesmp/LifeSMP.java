@@ -34,7 +34,7 @@ public class LifeSMP implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             LifeLog.init(server.getServerDirectory());
             LifeConfig.init(server.getServerDirectory());
-            MaskConfig.init(server.getServerDirectory());
+            MaskConfig.init(server);
             FileShare.init(server);
         });
         // Boot-time update check — runs after config is loaded. With auto-update

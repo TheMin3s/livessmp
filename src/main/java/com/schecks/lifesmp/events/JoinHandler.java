@@ -5,6 +5,7 @@ import com.schecks.lifesmp.LifeLog;
 import com.schecks.lifesmp.LifeUtil;
 import com.schecks.lifesmp.LivesData;
 import com.schecks.lifesmp.LivesNet;
+import com.schecks.lifesmp.MaskConfig;
 import com.schecks.lifesmp.ServerVersionPayload;
 import com.schecks.lifesmp.UpdateChecker;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
@@ -57,6 +58,9 @@ public final class JoinHandler {
     private static void initialiseAndAnnounce(MinecraftServer server, ServerPlayer player) {
         LivesData data = LivesData.get(server);
         data.updateName(player.getUUID(), player.getGameProfile().name());
+        // If any active mask was targeting this player's real name, drop it —
+        // the real account always wins, so no impersonation at join time.
+        MaskConfig.onPlayerJoined(player.getUUID(), player.getGameProfile().name());
         boolean first = !data.getOrCreate(player.getUUID()).initialised;
         if (first) {
             int startLives = LifeConfig.get().defaultLives;
