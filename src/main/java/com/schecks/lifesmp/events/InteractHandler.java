@@ -49,15 +49,18 @@ public final class InteractHandler {
         }
 
         data.addLives(sp.getUUID(), 1);
-        held.shrink(1);
-        // Replace empty stacks explicitly + broadcast inventory changes, so
-        // the client always sees the shard removed even if vanilla's menu
-        // diffing doesn't pick up a bare shrink-to-zero.
-        if (held.isEmpty()) sp.setItemInHand(hand, ItemStack.EMPTY);
-        sp.inventoryMenu.broadcastChanges();
-        if (sp.containerMenu != sp.inventoryMenu) {
-            sp.containerMenu.broadcastChanges();
+        // Remove via the canonical Inventory.removeItem on the hand's slot —
+        // shrink() on the held reference wasn't reliably propagating to the
+        // client's inventory view.
+        net.minecraft.world.entity.player.Inventory inv = sp.getInventory();
+        int slot = (hand == InteractionHand.MAIN_HAND)
+            ? inv.getSelectedSlot()
+            : inv.getContainerSize() - 1;   // offhand is the last slot
+        if (slot >= 0 && slot < inv.getContainerSize()) {
+            inv.removeItem(slot, 1);
         }
+        inv.setChanged();
+        sp.containerMenu.broadcastFullState();
         LifeUtil.refreshTabName(server, sp);
         int now = data.getLives(sp.getUUID());
         LifeLog.info("[lifesmp] {} deposited 1 life by right-click (now {})",

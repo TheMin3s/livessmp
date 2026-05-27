@@ -150,12 +150,11 @@ public final class LifeCommand {
             ItemStack s = inv.getItem(i);
             if (!LifeItems.isLifeShard(s)) continue;
             int take = Math.min(s.getCount(), capacity - deposited);
-            s.shrink(take);
-            // Stacks reduced to zero need to be replaced with EMPTY so the
-            // open-menu diffing reliably notices and pushes the slot update
-            // to the client — bare shrink() can leave a zero-count "ghost"
-            // that some screens don't redraw.
-            if (s.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+            if (take <= 0) continue;
+            // Use the canonical Inventory.removeItem — it both clears the slot
+            // when emptied and triggers the inventory's change tracking, which
+            // bare shrink() doesn't always do.
+            inv.removeItem(i, take);
             deposited += take;
         }
 
@@ -164,12 +163,11 @@ public final class LifeCommand {
             return 0;
         }
         data.addLives(self.getUUID(), deposited);
-        // Force a sync so the shrunk shards leave the client's inventory now,
-        // not on the next tick / next screen open.
-        self.inventoryMenu.broadcastChanges();
-        if (self.containerMenu != self.inventoryMenu) {
-            self.containerMenu.broadcastChanges();
-        }
+        // Mark dirty and resend the full menu state. broadcastFullState forces
+        // every slot to be re-sent to the client, bypassing the diff cache
+        // that was missing the shard removal in earlier builds.
+        inv.setChanged();
+        self.containerMenu.broadcastFullState();
         LifeUtil.refreshTabName(server, self);
         LifeLog.info("[lifesmp] {} deposited {} life(s) (now {})",
             self.getGameProfile().name(), deposited, data.getLives(self.getUUID()));
