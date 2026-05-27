@@ -9,6 +9,7 @@
     "PlayerDisplayNameMixin",
     "PlayerEntityMixin",
     "PlayerListMixin",
+    "ServerPlayerHurtMixin",
     "SlotMixin"
   ],
   "client": [
